@@ -93,7 +93,7 @@ jobs:
           build-args: |
             NODE_VERSION=22
             N8N_VERSION=${{ github.sha }}
-            N8N_RELEASE_TYPE=custom
+            N8N_RELEASE_TYPE=dev
             
       - name: Make package public
         if: github.event_name != 'pull_request' && github.event_name == 'push' && github.ref == 'refs/heads/master'
