@@ -90,11 +90,12 @@ const isTelemetryEnabled = computed((): boolean => {
 	return settingsStore.isTelemetryEnabled;
 });
 const showGitHubButton = computed(
-	() =>
-		!isEnterprise.value &&
-		!settingsStore.settings.inE2ETests &&
-		!githubButtonHidden.value &&
-		isTelemetryEnabled.value,
+	() => false, // Disabled GitHub star button
+	// Original logic:
+	// !isEnterprise.value &&
+	// !settingsStore.settings.inE2ETests &&
+	// !githubButtonHidden.value &&
+	// isTelemetryEnabled.value,
 );
 
 const parentFolderForBreadcrumbs = computed<FolderShortInfo | undefined>(() => {
