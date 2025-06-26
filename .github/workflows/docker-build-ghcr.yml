@@ -156,7 +156,6 @@ jobs:
             N8N_VERSION=${{ github.sha }}
             N8N_RELEASE_TYPE=${{ github.event_name == 'schedule' && 'nightly' || 'dev' }}
             N8N_DISABLED_MODULES=insights,external-secrets
-            TARGETPLATFORM=${{ env.PLATFORMS }}
           provenance: false
           sbom: false
           outputs: type=image,push-by-digest=true,name-canonical=true,push=true
