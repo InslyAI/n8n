@@ -97,6 +97,8 @@ jobs:
             
       - name: Make package public
         if: github.event_name != 'pull_request' && github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           echo "Waiting for package to be available..."
           sleep 30
