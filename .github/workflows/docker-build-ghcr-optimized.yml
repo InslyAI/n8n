@@ -157,12 +157,22 @@ jobs:
             --filter "n8n-editor-ui" \
             --filter "@n8n/chat" \
             --filter "@n8n/design-system" \
+            --filter "@n8n/utils" \
+            --filter "@n8n/constants" \
+            --filter "@n8n/api-types" \
+            --filter "@n8n/permissions" \
             --filter "n8n"
         
       - name: Build frontend only
         env:
           N8N_DISABLED_MODULES: insights,external-secrets
         run: |
+          # Build shared dependencies first
+          pnpm --filter @n8n/constants build || true
+          pnpm --filter @n8n/api-types build || true
+          pnpm --filter @n8n/permissions build || true
+          pnpm --filter @n8n/utils build || true
+          # Then build frontend packages
           pnpm --filter @n8n/design-system build
           pnpm --filter n8n-editor-ui build
           pnpm --filter @n8n/chat build
