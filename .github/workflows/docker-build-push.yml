@@ -237,6 +237,12 @@ jobs:
           provenance: false
           push: ${{ steps.context.outputs.push_enabled }}
           tags: ${{ steps.determine-tags.outputs.tags }}
+          cache-from: |
+            type=gha,scope=buildkit-${{ matrix.platform }}
+            type=registry,ref=${{ steps.determine-tags.outputs.primary_ghcr_manifest_tag }}-buildcache
+          cache-to: |
+            type=gha,mode=max,scope=buildkit-${{ matrix.platform }}
+            type=registry,ref=${{ steps.determine-tags.outputs.primary_ghcr_manifest_tag }}-buildcache,mode=max
 
   create_multi_arch_manifest:
     name: Create Multi-Arch Manifest
