@@ -510,7 +510,7 @@ onClickOutside(createBtn as Ref<VueInstance>, () => {
 	background-color: var(--menu-background, var(--color-background-xlight));
 
 	.logo {
-		display: flex;
+		display: none;
 		align-items: center;
 		padding: var(--spacing-xs);
 		justify-content: space-between;
