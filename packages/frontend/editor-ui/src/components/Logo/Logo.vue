@@ -4,6 +4,7 @@ import { computed, onMounted, useCssModule, useTemplateRef } from 'vue';
 import { useFavicon } from '@vueuse/core';
 
 import LogoIcon from './logo-icon.svg';
+import LogoText from './logo-text.svg';
 
 const props = defineProps<
 	(
@@ -57,7 +58,7 @@ onMounted(() => {
 <template>
 	<div :class="containerClasses" data-test-id="n8n-logo">
 		<LogoIcon ref="logo" :class="$style.logo" />
-		<span v-if="showLogoText" :class="$style.logoText">Insly</span>
+		<LogoText v-if="showLogoText" :class="$style.logoText" />
 		<slot />
 	</div>
 </template>
@@ -71,10 +72,9 @@ onMounted(() => {
 
 .logoText {
 	margin-left: var(--spacing-5xs);
-	color: var(--color-text-dark);
-	font-family: Arial, sans-serif;
-	font-size: 18px;
-	font-weight: bold;
+	path {
+		fill: var(--color-text-dark);
+	}
 }
 
 .authView {
