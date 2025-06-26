@@ -158,7 +158,6 @@ jobs:
             N8N_DISABLED_MODULES=insights,external-secrets
           provenance: false
           sbom: false
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
             
       - name: Make package public
         if: github.event_name != 'pull_request' && github.event_name == 'push' && github.ref == 'refs/heads/master'
