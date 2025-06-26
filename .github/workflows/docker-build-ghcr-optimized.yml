@@ -131,10 +131,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            packages/frontend/**/dist
-            packages/editor-ui/dist
-            packages/@n8n/chat/dist
-            packages/design-system/dist
+            packages/frontend/editor-ui/dist
+            packages/frontend/@n8n/chat/dist
+            packages/frontend/@n8n/design-system/dist
+            packages/@n8n/*/dist
+            compiled
           key: ${{ needs.build-cache.outputs.cache-key }}
           restore-keys: |
             build-cache-${{ github.sha }}-
@@ -176,6 +177,16 @@ jobs:
           pnpm --filter @n8n/design-system build
           pnpm --filter n8n-editor-ui build
           pnpm --filter @n8n/chat build
+          
+      - name: Save compiled assets cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/frontend/editor-ui/dist
+            packages/frontend/@n8n/chat/dist
+            packages/frontend/@n8n/design-system/dist
+            packages/@n8n/*/dist
+          key: ${{ needs.build-cache.outputs.cache-key }}
           
       - name: Quick backend build (reuse existing)
         run: |
@@ -273,7 +284,12 @@ jobs:
       - name: Configure Turborepo Cache
         uses: actions/cache@v4
         with:
-          path: .turbo
+          path: |
+            .turbo
+            packages/*/dist
+            packages/@n8n/*/dist
+            packages/frontend/*/dist
+            packages/frontend/@n8n/*/dist
           key: ${{ runner.os }}-turbo-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-turbo-
