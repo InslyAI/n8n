@@ -18,10 +18,13 @@ on:
         description: 'Docker image tag'
         required: false
         default: 'latest'
+  schedule:
+    - cron: '0 0 * * *'  # Nightly builds
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
   changes:
@@ -42,11 +45,12 @@ jobs:
               
   build-and-push:
     needs: changes
-    if: needs.changes.outputs.docker == 'true'
+    if: needs.changes.outputs.docker == 'true' || github.event_name == 'schedule'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    timeout-minutes: 30
       
     steps:
       - name: Checkout repository
@@ -65,16 +69,43 @@ jobs:
           node-version: 22.x
           cache: 'pnpm'
           
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            ~/.cache/Cypress
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+            
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         
+      - name: Configure Turborepo Cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+            
       - name: Build n8n
         env:
           N8N_DISABLED_MODULES: insights,external-secrets
+          TURBO_CACHE_DIR: .turbo
         run: pnpm build:n8n
+        
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
         
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
+            image=moby/buildkit:latest
+          buildkitd-flags: --debug
         
       - name: Log in to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -96,29 +127,39 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=nightly,enable=${{ github.event_name == 'schedule' }}
             type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
             type=sha,prefix={{branch}}-
+          labels: |
+            org.opencontainers.image.vendor=Insly
+            org.opencontainers.image.title=n8n
+            org.opencontainers.image.description=Workflow Automation Tool
             
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./docker/images/n8n/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ env.PLATFORMS }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: |
-            type=gha
+            type=gha,scope=${{ github.workflow }}
             type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           cache-to: |
-            type=gha,mode=max
-            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+            type=gha,mode=max,scope=${{ github.workflow }}
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max,compression=zstd,compression-level=3
           build-args: |
             NODE_VERSION=22
             N8N_VERSION=${{ github.sha }}
-            N8N_RELEASE_TYPE=dev
+            N8N_RELEASE_TYPE=${{ github.event_name == 'schedule' && 'nightly' || 'dev' }}
             N8N_DISABLED_MODULES=insights,external-secrets
+            TARGETPLATFORM=${{ env.PLATFORMS }}
+          provenance: false
+          sbom: false
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
             
       - name: Make package public
         if: github.event_name != 'pull_request' && github.event_name == 'push' && github.ref == 'refs/heads/master'
