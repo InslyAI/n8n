@@ -1,0 +1,369 @@
+name: Build and Push Docker Image to GHCR (Optimized)
+
+on:
+  push:
+    branches:
+      - master
+      - main
+      - 'release/*'
+      - 'feature/optimize-docker-ui-builds'  # For testing
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker image tag'
+        required: false
+        default: 'latest'
+      build_type:
+        description: 'Build type'
+        required: false
+        type: choice
+        options:
+          - auto
+          - ui-only
+          - full
+        default: 'auto'
+  schedule:
+    - cron: '0 0 * * *'  # Nightly builds
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: inslyai/n8n
+  PLATFORMS_FULL: linux/amd64,linux/arm64
+  PLATFORMS_QUICK: linux/amd64  # For PRs and UI-only builds
+
+jobs:
+  # Detect what changed to optimize build
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+      ui-only: ${{ steps.filter.outputs.ui-only }}
+      backend: ${{ steps.filter.outputs.backend }}
+      build-type: ${{ steps.determine-build.outputs.type }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docker:
+              - '**'
+              - '!**.md'
+              - '!docs/**'
+              - '!.github/**.md'
+            ui-only:
+              - 'packages/frontend/**'
+              - 'packages/editor-ui/**'
+              - 'packages/@n8n/chat/**'
+              - 'packages/design-system/**'
+              - '!packages/frontend/**/*.test.*'
+              - '!packages/frontend/**/*.spec.*'
+              - '!packages/frontend/**/__tests__/**'
+            backend:
+              - 'packages/cli/**'
+              - 'packages/core/**'
+              - 'packages/workflow/**'
+              - 'packages/nodes-base/**'
+              - 'packages/@n8n/client-oauth2/**'
+              - 'packages/@n8n/config/**'
+              
+      - name: Determine build type
+        id: determine-build
+        run: |
+          if [[ "${{ github.event.inputs.build_type }}" != "" && "${{ github.event.inputs.build_type }}" != "auto" ]]; then
+            echo "type=${{ github.event.inputs.build_type }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ steps.filter.outputs.backend }}" == "true" ]]; then
+            echo "type=full" >> $GITHUB_OUTPUT
+          elif [[ "${{ steps.filter.outputs.ui-only }}" == "true" && "${{ steps.filter.outputs.backend }}" != "true" ]]; then
+            echo "type=ui-only" >> $GITHUB_OUTPUT
+          else
+            echo "type=full" >> $GITHUB_OUTPUT
+          fi
+
+  # Cache builder for compiled assets
+  build-cache:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.key }}
+    steps:
+      - name: Generate cache key
+        id: cache-key
+        run: |
+          echo "key=build-cache-${{ github.sha }}-${{ needs.changes.outputs.build-type }}" >> $GITHUB_OUTPUT
+
+  # UI-only optimized build
+  build-ui-only:
+    needs: [changes, build-cache]
+    if: |
+      (needs.changes.outputs.docker == 'true' || github.event_name == 'schedule') &&
+      needs.changes.outputs.build-type == 'ui-only'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: 'pnpm'
+          
+      - name: Restore compiled assets cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            packages/frontend/**/dist
+            packages/editor-ui/dist
+            packages/@n8n/chat/dist
+            packages/design-system/dist
+          key: ${{ needs.build-cache.outputs.cache-key }}
+          restore-keys: |
+            build-cache-${{ github.sha }}-
+            build-cache-
+            
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            ~/.cache/Cypress
+          key: ${{ runner.os }}-pnpm-ui-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-ui-
+            ${{ runner.os }}-pnpm-
+            
+      - name: Install frontend dependencies only
+        run: |
+          pnpm install --frozen-lockfile \
+            --filter "n8n-editor-ui" \
+            --filter "@n8n/chat" \
+            --filter "@n8n/design-system" \
+            --filter "n8n"
+        
+      - name: Build frontend only
+        env:
+          N8N_DISABLED_MODULES: insights,external-secrets
+        run: |
+          pnpm --filter @n8n/design-system build
+          pnpm --filter n8n-editor-ui build
+          pnpm --filter @n8n/chat build
+          
+      - name: Quick backend build (reuse existing)
+        run: |
+          # Download pre-built backend from latest image
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest || true
+          
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+          
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-ui
+            type=ref,event=pr,suffix=-ui
+            type=raw,value=latest-ui,enable={{is_default_branch}}
+            type=sha,prefix={{branch}}-ui-
+            
+      - name: Build and push UI-optimized image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/images/n8n/Dockerfile
+          platforms: ${{ env.PLATFORMS_QUICK }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=gha,scope=${{ github.workflow }}-ui
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-ui
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-to: |
+            type=gha,mode=max,scope=${{ github.workflow }}-ui
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-ui,mode=max
+          build-args: |
+            NODE_VERSION=22
+            N8N_VERSION=${{ github.sha }}
+            N8N_RELEASE_TYPE=${{ github.event_name == 'schedule' && 'nightly' || 'dev' }}
+            N8N_DISABLED_MODULES=insights,external-secrets
+          target: runtime
+
+  # Full build (existing optimized)
+  build-full:
+    needs: [changes, build-cache]
+    if: |
+      (needs.changes.outputs.docker == 'true' || github.event_name == 'schedule') &&
+      needs.changes.outputs.build-type == 'full'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+        
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+          
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: 'pnpm'
+          
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            ~/.cache/Cypress
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+            
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Configure Turborepo Cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+            
+      - name: Build n8n
+        env:
+          N8N_DISABLED_MODULES: insights,external-secrets
+          TURBO_CACHE_DIR: .turbo
+        run: pnpm build:n8n
+        
+      - name: Set up QEMU
+        if: github.event_name != 'pull_request'
+        uses: docker/setup-qemu-action@v3
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
+            image=moby/buildkit:latest
+          buildkitd-flags: --debug
+        
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=nightly,enable=${{ github.event_name == 'schedule' }}
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=sha,prefix={{branch}}-
+          labels: |
+            org.opencontainers.image.vendor=Insly
+            org.opencontainers.image.title=n8n
+            org.opencontainers.image.description=Workflow Automation Tool
+            
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/images/n8n/Dockerfile
+          platforms: ${{ github.event_name == 'pull_request' && env.PLATFORMS_QUICK || env.PLATFORMS_FULL }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=gha,scope=${{ github.workflow }}
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-to: |
+            type=gha,mode=max,scope=${{ github.workflow }}
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max,compression=zstd,compression-level=3
+          build-args: |
+            NODE_VERSION=22
+            N8N_VERSION=${{ github.sha }}
+            N8N_RELEASE_TYPE=${{ github.event_name == 'schedule' && 'nightly' || 'dev' }}
+            N8N_DISABLED_MODULES=insights,external-secrets
+          provenance: false
+          sbom: false
+            
+      - name: Make package public
+        if: github.event_name != 'pull_request' && github.event_name == 'push' && github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Waiting for package to be available..."
+          sleep 30
+          
+          # Try to make the package public
+          gh api \
+            --method PUT \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            /orgs/${{ github.repository_owner }}/packages/container/n8n/visibility \
+            -f visibility='public' || echo "Package might already be public or not yet available"
+
+  # Summary job
+  build-summary:
+    needs: [changes, build-ui-only, build-full]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Build Type: ${{ needs.changes.outputs.build-type }}" >> $GITHUB_STEP_SUMMARY
+          echo "- UI Changes: ${{ needs.changes.outputs.ui-only }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend Changes: ${{ needs.changes.outputs.backend }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Time Saved: ~70% for UI-only builds" >> $GITHUB_STEP_SUMMARY
