@@ -21,12 +21,9 @@ import type { IDataObject, WorkflowSettings } from 'n8n-workflow';
 import { defineStore } from 'pinia';
 import { useRootStore } from '@n8n/stores/useRootStore';
 import { makeRestApiRequest } from '@n8n/rest-api-client';
-import { useToast } from '@/composables/useToast';
-import { useI18n } from '@n8n/i18n';
 import { useLocalStorage } from '@vueuse/core';
 
 export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
-	const i18n = useI18n();
 	const initialized = ref(false);
 	const settings = ref<FrontendSettings>({} as FrontendSettings);
 	const moduleSettings = ref<FrontendModuleSettings>({});
@@ -52,6 +49,7 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 	const saveDataSuccessExecution = ref<WorkflowSettings.SaveDataExecution>('all');
 	const saveManualExecutions = ref(false);
 	const saveDataProgressExecution = ref(false);
+	const isMFAEnforced = ref(false);
 
 	const isDocker = computed(() => settings.value?.isDocker ?? false);
 
@@ -132,6 +130,10 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 	const isTelemetryEnabled = computed(
 		() => settings.value.telemetry && settings.value.telemetry.enabled,
 	);
+
+	const isMFAEnforcementLicensed = computed(() => {
+		return settings.value.enterprise?.mfaEnforcement ?? false;
+	});
 
 	const isMfaFeatureEnabled = computed(() => mfa.value.enabled);
 
@@ -238,6 +240,8 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 		setSaveDataProgressExecution(fetchedSettings.saveExecutionProgress);
 		setSaveManualExecutions(fetchedSettings.saveManualExecutions);
 
+		isMFAEnforced.value = settings.value.mfa?.enforced ?? false;
+
 		rootStore.setUrlBaseWebhook(fetchedSettings.urlBaseWebhook);
 		rootStore.setUrlBaseEditor(fetchedSettings.urlBaseEditor);
 		rootStore.setEndpointForm(fetchedSettings.endpointForm);
@@ -265,23 +269,11 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 			return;
 		}
 
-		const { showToast } = useToast();
-		try {
-			await getSettings();
+		await getSettings();
 
-			initialized.value = true;
+		initialized.value = true;
 
-			await getModuleSettings();
-		} catch (e) {
-			showToast({
-				title: i18n.baseText('startupError'),
-				message: i18n.baseText('startupError.message'),
-				type: 'error',
-				duration: 0,
-			});
-
-			throw e;
-		}
+		await getModuleSettings();
 	};
 
 	const stopShowingSetupPage = () => {
@@ -406,5 +398,7 @@ export const useSettingsStore = defineStore(STORES.SETTINGS, () => {
 		activeModules,
 		getModuleSettings,
 		moduleSettings,
+		isMFAEnforcementLicensed,
+		isMFAEnforced,
 	};
 });
