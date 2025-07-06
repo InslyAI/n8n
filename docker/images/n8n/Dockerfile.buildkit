@@ -69,6 +69,12 @@ COPY packages/frontend/editor-ui ./packages/frontend/editor-ui
 # Copy shared packages that frontend depends on
 COPY packages/@n8n/api-types ./packages/@n8n/api-types
 COPY packages/@n8n/permissions ./packages/@n8n/permissions
+COPY packages/@n8n/typescript-config ./packages/@n8n/typescript-config
+COPY packages/@n8n/constants ./packages/@n8n/constants
+COPY packages/@n8n/utils ./packages/@n8n/utils
+COPY packages/@n8n/codemirror-lang ./packages/@n8n/codemirror-lang
+COPY packages/@n8n/vitest-config ./packages/@n8n/vitest-config
+COPY packages/@n8n/storybook ./packages/@n8n/storybook
 COPY packages/workflow ./packages/workflow
 
 # Build frontend with cache
