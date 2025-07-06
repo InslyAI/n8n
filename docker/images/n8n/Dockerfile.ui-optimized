@@ -1,0 +1,68 @@
+# syntax=docker/dockerfile:1.7
+ARG NODE_VERSION=22
+ARG BASE_IMAGE=ghcr.io/inslyai/n8n:latest
+
+# ==============================================================================
+# STAGE 1: UI Builder (Minimal dependencies)
+# ==============================================================================
+FROM node:${NODE_VERSION}-alpine AS ui-builder
+
+WORKDIR /app
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy only UI-related package files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY packages/@n8n/design-system/package.json ./packages/@n8n/design-system/
+COPY packages/@n8n/chat/package.json ./packages/@n8n/chat/
+COPY packages/editor-ui/package.json ./packages/editor-ui/
+
+# Install only UI dependencies with cache
+RUN --mount=type=cache,id=pnpm-ui-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile \
+    --filter "@n8n/design-system" \
+    --filter "@n8n/chat" \
+    --filter "n8n-editor-ui"
+
+# Copy UI source code
+COPY packages/@n8n/design-system ./packages/@n8n/design-system
+COPY packages/@n8n/chat ./packages/@n8n/chat
+COPY packages/editor-ui ./packages/editor-ui
+
+# Build UI components with turbo cache
+RUN --mount=type=cache,id=turbo-ui-cache,target=/app/.turbo \
+    TURBO_CACHE_DIR=/app/.turbo \
+    pnpm --filter @n8n/design-system build && \
+    pnpm --filter @n8n/chat build && \
+    pnpm --filter n8n-editor-ui build
+
+# ==============================================================================
+# STAGE 2: Final Image (Reuse backend from base)
+# ==============================================================================
+FROM ${BASE_IMAGE} AS runtime
+
+# Switch to root to replace UI files
+USER root
+
+# Remove old UI files
+RUN rm -rf /usr/local/lib/node_modules/n8n/packages/@n8n/design-system/dist && \
+    rm -rf /usr/local/lib/node_modules/n8n/packages/@n8n/chat/dist && \
+    rm -rf /usr/local/lib/node_modules/n8n/packages/editor-ui/dist
+
+# Copy new UI builds
+COPY --from=ui-builder /app/packages/@n8n/design-system/dist /usr/local/lib/node_modules/n8n/packages/@n8n/design-system/dist
+COPY --from=ui-builder /app/packages/@n8n/chat/dist /usr/local/lib/node_modules/n8n/packages/@n8n/chat/dist
+COPY --from=ui-builder /app/packages/editor-ui/dist /usr/local/lib/node_modules/n8n/packages/editor-ui/dist
+
+# Fix permissions
+RUN chown -R node:node /usr/local/lib/node_modules/n8n/packages/@n8n/design-system/dist && \
+    chown -R node:node /usr/local/lib/node_modules/n8n/packages/@n8n/chat/dist && \
+    chown -R node:node /usr/local/lib/node_modules/n8n/packages/editor-ui/dist
+
+# Switch back to node user
+USER node
+
+# Labels for UI-only build
+LABEL org.opencontainers.image.description="n8n with updated UI only" \
+      build.type="ui-only"

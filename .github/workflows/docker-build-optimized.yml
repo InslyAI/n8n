@@ -1,0 +1,263 @@
+name: Build and Push Docker Image (Optimized)
+
+on:
+  push:
+    branches:
+      - master
+      - main
+      - 'release/*'
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker image tag'
+        required: false
+        default: 'latest'
+      build_type:
+        description: 'Build type'
+        required: false
+        type: choice
+        options:
+          - auto
+          - ui-only
+          - backend-only
+          - full
+        default: 'auto'
+  schedule:
+    - cron: '0 0 * * *'  # Nightly builds
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: inslyai/n8n
+  PLATFORMS: linux/amd64
+  NODE_VERSION: 22
+  PNPM_VERSION: 9
+
+jobs:
+  # Detect what changed to optimize build
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ui: ${{ steps.filter.outputs.ui }}
+      backend: ${{ steps.filter.outputs.backend }}
+      docker: ${{ steps.filter.outputs.docker }}
+      build_type: ${{ steps.determine.outputs.build_type }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ui:
+              - 'packages/editor-ui/**'
+              - 'packages/@n8n/chat/**'
+              - 'packages/@n8n/design-system/**'
+              - 'packages/frontend/**'
+            backend:
+              - 'packages/cli/**'
+              - 'packages/core/**'
+              - 'packages/workflow/**'
+              - 'packages/nodes-base/**'
+              - 'packages/@n8n/api-types/**'
+              - 'packages/@n8n/config/**'
+              - 'packages/@n8n/db/**'
+            docker:
+              - 'docker/**'
+              - 'Dockerfile*'
+              - '.dockerignore'
+              
+      - name: Determine build type
+        id: determine
+        run: |
+          if [ "${{ github.event.inputs.build_type }}" != "" ] && [ "${{ github.event.inputs.build_type }}" != "auto" ]; then
+            echo "build_type=${{ github.event.inputs.build_type }}" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.filter.outputs.ui }}" == "true" ] && [ "${{ steps.filter.outputs.backend }}" != "true" ]; then
+            echo "build_type=ui-only" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.filter.outputs.backend }}" == "true" ] && [ "${{ steps.filter.outputs.ui }}" != "true" ]; then
+            echo "build_type=backend-only" >> $GITHUB_OUTPUT
+          else
+            echo "build_type=full" >> $GITHUB_OUTPUT
+          fi
+
+  # Build job optimized based on detected changes
+  build-and-push:
+    needs: changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      BUILD_TYPE: ${{ needs.changes.outputs.build_type }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          
+      - name: Enable Corepack
+        run: corepack enable
+        
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          
+      # Cache pnpm store
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+          
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+            
+      # Cache turbo build artifacts
+      - name: Setup Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}-${{ env.BUILD_TYPE }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ github.sha }}-
+            ${{ runner.os }}-turbo-
+            
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          if [ "$BUILD_TYPE" = "ui-only" ]; then
+            pnpm install --frozen-lockfile --filter "@n8n/design-system" --filter "@n8n/chat" --filter "n8n-editor-ui"
+          else
+            pnpm install --frozen-lockfile
+          fi
+        
+      # Build based on type
+      - name: Build UI only
+        if: env.BUILD_TYPE == 'ui-only'
+        run: |
+          pnpm --filter @n8n/design-system build
+          pnpm --filter @n8n/chat build
+          pnpm --filter n8n-editor-ui build
+          
+      - name: Build backend only
+        if: env.BUILD_TYPE == 'backend-only'
+        run: |
+          pnpm build:backend
+          
+      - name: Build full application
+        if: env.BUILD_TYPE == 'full'
+        run: |
+          pnpm build
+          
+      # Docker setup
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
+          buildkitd-flags: --debug
+          
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          
+      # Docker metadata
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=nightly,enable=${{ github.event_name == 'schedule' }}
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
+            type=sha,prefix={{branch}}-
+            type=raw,value={{branch}}-${{ env.BUILD_TYPE }}
+          labels: |
+            org.opencontainers.image.vendor=Insly
+            org.opencontainers.image.title=n8n
+            org.opencontainers.image.description=Workflow Automation Tool
+            build.type=${{ env.BUILD_TYPE }}
+            
+      # Build strategies based on type
+      - name: Build and push Docker image (UI only)
+        if: env.BUILD_TYPE == 'ui-only'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/images/n8n/Dockerfile.ui-optimized
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=gha,scope=build-${{ env.BUILD_TYPE }}
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-ui
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-to: |
+            type=gha,mode=max,scope=build-${{ env.BUILD_TYPE }}
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache-ui,mode=max
+          build-args: |
+            NODE_VERSION=${{ env.NODE_VERSION }}
+            N8N_VERSION=${{ github.sha }}
+            BASE_IMAGE=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            
+      - name: Build and push Docker image (Full/Backend)
+        if: env.BUILD_TYPE != 'ui-only'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/images/n8n/Dockerfile.buildkit
+          platforms: ${{ env.PLATFORMS }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=gha,scope=build-full
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          cache-to: |
+            type=gha,mode=max,scope=build-full
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          build-args: |
+            NODE_VERSION=${{ env.NODE_VERSION }}
+            N8N_VERSION=${{ github.sha }}
+            N8N_RELEASE_TYPE=${{ github.event_name == 'schedule' && 'nightly' || 'dev' }}
+          provenance: false
+          sbom: false
+          
+      # Summary
+      - name: Build Summary
+        if: always()
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build Type**: ${{ env.BUILD_TYPE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **UI Changed**: ${{ needs.changes.outputs.ui }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Backend Changed**: ${{ needs.changes.outputs.backend }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Docker Changed**: ${{ needs.changes.outputs.docker }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platform**: ${{ env.PLATFORMS }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "- **Tags**: ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          fi
