@@ -36,7 +36,7 @@ env:
   IMAGE_NAME: inslyai/n8n
   PLATFORMS: linux/amd64
   NODE_VERSION: 22
-  PNPM_VERSION: 9
+  PNPM_VERSION: 10.12.1
 
 jobs:
   # Detect what changed to optimize build
