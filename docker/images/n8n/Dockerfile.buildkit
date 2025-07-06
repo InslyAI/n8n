@@ -78,11 +78,10 @@ COPY packages/@n8n/storybook ./packages/@n8n/storybook
 COPY packages/workflow ./packages/workflow
 
 # Build frontend with cache
+# First build the dependencies, then the frontend packages
 RUN --mount=type=cache,id=turbo-cache,target=/app/.turbo \
     TURBO_CACHE_DIR=/app/.turbo \
-    pnpm --filter @n8n/design-system build && \
-    pnpm --filter @n8n/chat build && \
-    pnpm --filter n8n-editor-ui build
+    pnpm build --filter="@n8n/design-system..." --filter="@n8n/chat..." --filter="n8n-editor-ui..."
 
 # ==============================================================================
 # STAGE 4: Backend Builder
