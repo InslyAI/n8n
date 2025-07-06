@@ -920,6 +920,7 @@ export type IExecuteFunctions = ExecuteFunctions.GetNodeParameterFn &
 		sendMessageToUI(message: any): void;
 		sendResponse(response: IExecuteResponsePromiseData): void;
 		sendChunk(type: ChunkType, content?: IDataObject | string): void;
+		isStreaming(): boolean;
 
 		// TODO: Make this one then only available in the new config one
 		addInputData(
@@ -1908,7 +1909,8 @@ export interface INodeInputFilter {
 	// TODO: Later add more filter options like categories, subcatogries,
 	//       regex, allow to exclude certain nodes, ... ?
 	//       Potentially change totally after alpha/beta. Is not a breaking change after all.
-	nodes: string[]; // Allowed nodes
+	nodes?: string[]; // Allowed nodes
+	excludedNodes?: string[];
 }
 
 export interface INodeInputConfiguration {
@@ -2393,6 +2395,7 @@ export interface IWorkflowExecuteAdditionalData {
 	currentNodeExecutionIndex: number;
 	httpResponse?: express.Response;
 	httpRequest?: express.Request;
+	streamingEnabled?: boolean;
 	restApiUrl: string;
 	instanceBaseUrl: string;
 	setExecutionStatus?: (status: ExecutionStatus) => void;

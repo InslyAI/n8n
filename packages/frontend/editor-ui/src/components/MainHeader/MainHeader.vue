@@ -287,7 +287,7 @@ function hideGithubButton() {
 						</GithubButton>
 						<N8nIcon
 							:class="$style['close-github-button']"
-							icon="times-circle"
+							icon="circle-x"
 							size="medium"
 							@click="hideGithubButton"
 						/>
