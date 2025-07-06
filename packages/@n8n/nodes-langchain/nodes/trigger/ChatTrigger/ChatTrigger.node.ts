@@ -210,8 +210,8 @@ export class ChatTrigger extends Node {
 		iconColor: 'black',
 		group: ['trigger'],
 		version: [1, 1.1, 1.2],
-		// Keep the default version as 1.1 to avoid releasing streaming in broken state
-		defaultVersion: 1.1,
+		// Enable streaming by default (version 1.2)
+		defaultVersion: 1.2,
 		description: 'Runs the workflow when an n8n generated webchat is submitted',
 		defaults: {
 			name: 'When chat message received',
@@ -444,7 +444,7 @@ export class ChatTrigger extends Node {
 						name: 'responseMode',
 						type: 'options',
 						options: responseModeWithStreamingOptions,
-						default: 'lastNode',
+						default: 'streaming',
 						description: 'When and how to respond to the webhook',
 					},
 				],
@@ -591,6 +591,7 @@ export class ChatTrigger extends Node {
 					allowFileUploads: options.allowFileUploads,
 					allowedFilesMimeTypes: options.allowedFilesMimeTypes,
 					customCss: options.customCss,
+					enableStreaming,
 				});
 
 				res.status(200).send(page).end();
