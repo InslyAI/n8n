@@ -33,18 +33,21 @@ WORKDIR /app
 # Copy dependency files first (for better caching)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY patches ./patches
+COPY scripts ./scripts
 
-# Copy the entire packages directory structure 
+# Copy the entire packages directory structure and cypress
 # This ensures all package.json files and any other necessary config files are present
 COPY packages ./packages
+COPY cypress/package.json ./cypress/
 
 # Remove everything except package.json files to minimize layer size
 RUN find packages -type f ! -name "package.json" -delete && \
     find packages -type d -empty -delete
 
 # Install ALL dependencies with cache mount
+# Set DOCKER_BUILD=1 to skip lefthook installation
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --prefer-offline
+    DOCKER_BUILD=1 pnpm install --frozen-lockfile --prefer-offline
 
 # ==============================================================================
 # STAGE 3: Frontend Builder (Can be cached separately)
