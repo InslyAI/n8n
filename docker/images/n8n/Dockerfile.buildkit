@@ -32,14 +32,18 @@ WORKDIR /app
 
 # Copy dependency files first (for better caching)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
-COPY packages/*/package.json ./packages/
 
-# Create directory structure
-RUN find packages -name "package.json" -type f | while read pkg; do \
-    dir=$(dirname "$pkg"); \
-    mkdir -p "$dir"; \
-    cp "$pkg" "$dir/"; \
-done
+# Create directory structure for packages
+RUN mkdir -p packages/@n8n packages/frontend/@n8n packages/frontend
+
+# Copy all package.json files
+COPY packages/@n8n/*/package.json packages/@n8n/
+COPY packages/frontend/@n8n/*/package.json packages/frontend/@n8n/
+COPY packages/frontend/editor-ui/package.json packages/frontend/editor-ui/
+COPY packages/cli/package.json packages/cli/
+COPY packages/core/package.json packages/core/
+COPY packages/nodes-base/package.json packages/nodes-base/
+COPY packages/workflow/package.json packages/workflow/
 
 # Install ALL dependencies with cache mount
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
@@ -51,9 +55,9 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 FROM deps-installer AS frontend-builder
 
 # Copy frontend source code
-COPY packages/@n8n/design-system ./packages/@n8n/design-system
-COPY packages/@n8n/chat ./packages/@n8n/chat
-COPY packages/editor-ui ./packages/editor-ui
+COPY packages/frontend/@n8n/design-system ./packages/frontend/@n8n/design-system
+COPY packages/frontend/@n8n/chat ./packages/frontend/@n8n/chat
+COPY packages/frontend/editor-ui ./packages/frontend/editor-ui
 
 # Copy shared packages that frontend depends on
 COPY packages/@n8n/api-types ./packages/@n8n/api-types
@@ -76,9 +80,9 @@ FROM deps-installer AS backend-builder
 COPY . .
 
 # Copy built frontend from previous stage
-COPY --from=frontend-builder /app/packages/@n8n/design-system/dist ./packages/@n8n/design-system/dist
-COPY --from=frontend-builder /app/packages/@n8n/chat/dist ./packages/@n8n/chat/dist
-COPY --from=frontend-builder /app/packages/editor-ui/dist ./packages/editor-ui/dist
+COPY --from=frontend-builder /app/packages/frontend/@n8n/design-system/dist ./packages/frontend/@n8n/design-system/dist
+COPY --from=frontend-builder /app/packages/frontend/@n8n/chat/dist ./packages/frontend/@n8n/chat/dist
+COPY --from=frontend-builder /app/packages/frontend/editor-ui/dist ./packages/frontend/editor-ui/dist
 
 # Build backend with turbo cache
 RUN --mount=type=cache,id=turbo-cache,target=/app/.turbo \
