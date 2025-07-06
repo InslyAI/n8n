@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Github__GITHUB-LIST-WORKFLOW-RUNS"
+    ],
+    "deny": []
+  }
+}
