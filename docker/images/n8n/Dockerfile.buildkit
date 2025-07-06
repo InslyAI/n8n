@@ -114,21 +114,25 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
 # ==============================================================================
 FROM alpine:3.20.3 AS launcher-downloader
 ARG TARGETPLATFORM=linux/amd64
-ARG LAUNCHER_VERSION
+ARG LAUNCHER_VERSION=1.1.3
 
-RUN set -eux; \
-    case "$TARGETPLATFORM" in \
+RUN apk add --no-cache wget ca-certificates
+
+RUN set -e; \
+    case "${TARGETPLATFORM}" in \
         "linux/amd64") ARCH_NAME="amd64" ;; \
         "linux/arm64") ARCH_NAME="arm64" ;; \
-        *) echo "Unsupported platform: $TARGETPLATFORM" && exit 1 ;; \
+        *) echo "Unsupported platform: ${TARGETPLATFORM}" && exit 1 ;; \
     esac; \
-    mkdir /launcher-temp && cd /launcher-temp && \
-    wget -q "https://github.com/n8n-io/task-runner-launcher/releases/download/${LAUNCHER_VERSION}/task-runner-launcher-${LAUNCHER_VERSION}-linux-${ARCH_NAME}.tar.gz" && \
-    wget -q "https://github.com/n8n-io/task-runner-launcher/releases/download/${LAUNCHER_VERSION}/task-runner-launcher-${LAUNCHER_VERSION}-linux-${ARCH_NAME}.tar.gz.sha256" && \
-    sha256sum -c *.sha256 && \
-    mkdir -p /launcher-bin && \
-    tar xzf *.tar.gz -C /launcher-bin && \
-    rm -rf /launcher-temp
+    echo "Platform: ${TARGETPLATFORM}, Architecture: ${ARCH_NAME}, Version: ${LAUNCHER_VERSION}"; \
+    mkdir /launcher-temp && cd /launcher-temp; \
+    wget -q "https://github.com/n8n-io/task-runner-launcher/releases/download/${LAUNCHER_VERSION}/task-runner-launcher-${LAUNCHER_VERSION}-linux-${ARCH_NAME}.tar.gz"; \
+    wget -q "https://github.com/n8n-io/task-runner-launcher/releases/download/${LAUNCHER_VERSION}/task-runner-launcher-${LAUNCHER_VERSION}-linux-${ARCH_NAME}.tar.gz.sha256"; \
+    echo "$(cat task-runner-launcher-${LAUNCHER_VERSION}-linux-${ARCH_NAME}.tar.gz.sha256) task-runner-launcher-${LAUNCHER_VERSION}-linux-${ARCH_NAME}.tar.gz" > checksum.sha256; \
+    sha256sum -c checksum.sha256; \
+    mkdir -p /launcher-bin; \
+    tar xzf task-runner-launcher-${LAUNCHER_VERSION}-linux-${ARCH_NAME}.tar.gz -C /launcher-bin; \
+    cd / && rm -rf /launcher-temp
 
 # ==============================================================================
 # STAGE 7: Final Runtime Image
