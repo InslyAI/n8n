@@ -35,7 +35,7 @@ export const anthropicClaude37Sonnet = async (config: LLMConfig) => {
 		model: 'claude-sonnet-4-20250514',
 		apiKey: config.apiKey,
 		temperature: 0,
-		maxTokens: 32000,
+		maxTokens: 64000,
 		anthropicApiUrl: config.baseUrl,
 		clientOptions: {
 			defaultHeaders: config.headers,
