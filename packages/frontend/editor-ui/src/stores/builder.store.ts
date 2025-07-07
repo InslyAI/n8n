@@ -65,10 +65,13 @@ export const useBuilderStore = defineStore(STORES.BUILDER, () => {
 	const isAssistantOpen = computed(() => canShowAssistant.value && chatWindowOpen.value);
 
 	const isAIBuilderEnabled = computed(() => {
-		return (
-			posthogStore.getVariant(WORKFLOW_BUILDER_EXPERIMENT.name) ===
-			WORKFLOW_BUILDER_EXPERIMENT.variant
-		);
+		// Bypass experiment check - always enable AI Builder
+		return true;
+		// Original code:
+		// return (
+		// 	posthogStore.getVariant(WORKFLOW_BUILDER_EXPERIMENT.name) ===
+		// 	WORKFLOW_BUILDER_EXPERIMENT.variant
+		// );
 	});
 
 	// No need to track unread messages in the AI Builder
