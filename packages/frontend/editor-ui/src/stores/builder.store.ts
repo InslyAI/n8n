@@ -3,7 +3,7 @@ import type { VIEWS } from '@/constants';
 import {
 	ASK_AI_SLIDE_OUT_DURATION_MS,
 	EDITABLE_CANVAS_VIEWS,
-	WORKFLOW_BUILDER_EXPERIMENT,
+	// WORKFLOW_BUILDER_EXPERIMENT,
 } from '@/constants';
 import { STORES } from '@n8n/stores';
 import type { ChatRequest } from '@/types/assistant.types';
@@ -18,7 +18,7 @@ import { assert } from '@n8n/utils/assert';
 import { useI18n } from '@n8n/i18n';
 import { useTelemetry } from '@/composables/useTelemetry';
 import { useUIStore } from './ui.store';
-import { usePostHog } from './posthog.store';
+// import { usePostHog } from './posthog.store';
 import { useNodeTypesStore } from './nodeTypes.store';
 import { DEFAULT_CHAT_WIDTH, MAX_CHAT_WIDTH, MIN_CHAT_WIDTH } from './assistant.store';
 
@@ -41,7 +41,7 @@ export const useBuilderStore = defineStore(STORES.BUILDER, () => {
 	const route = useRoute();
 	const locale = useI18n();
 	const telemetry = useTelemetry();
-	const posthogStore = usePostHog();
+	// const posthogStore = usePostHog();
 	const nodeTypesStore = useNodeTypesStore();
 
 	// Computed properties
