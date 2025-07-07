@@ -57,62 +57,29 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     DOCKER_BUILD=1 pnpm install --frozen-lockfile --prefer-offline
 
 # ==============================================================================
-# STAGE 3: Frontend Builder (Can be cached separately)
+# STAGE 3: Builder
 # ==============================================================================
-FROM deps-installer AS frontend-builder
-
-# Copy frontend source code
-COPY packages/frontend/@n8n/design-system ./packages/frontend/@n8n/design-system
-COPY packages/frontend/@n8n/chat ./packages/frontend/@n8n/chat
-COPY packages/frontend/editor-ui ./packages/frontend/editor-ui
-
-# Copy shared packages that frontend depends on
-COPY packages/@n8n/api-types ./packages/@n8n/api-types
-COPY packages/@n8n/permissions ./packages/@n8n/permissions
-COPY packages/@n8n/typescript-config ./packages/@n8n/typescript-config
-COPY packages/@n8n/constants ./packages/@n8n/constants
-COPY packages/@n8n/utils ./packages/@n8n/utils
-COPY packages/@n8n/codemirror-lang ./packages/@n8n/codemirror-lang
-COPY packages/@n8n/vitest-config ./packages/@n8n/vitest-config
-COPY packages/@n8n/storybook ./packages/@n8n/storybook
-COPY packages/workflow ./packages/workflow
-
-# Build frontend with cache
-# First build the dependencies, then the frontend packages
-RUN --mount=type=cache,id=turbo-cache,target=/app/.turbo \
-    TURBO_CACHE_DIR=/app/.turbo \
-    pnpm build --filter="@n8n/design-system..." --filter="@n8n/chat..." --filter="n8n-editor-ui..."
-
-# ==============================================================================
-# STAGE 4: Backend Builder
-# ==============================================================================
-FROM deps-installer AS backend-builder
+FROM deps-installer AS builder
 
 # Copy all source code
 COPY . .
 
-# Copy built frontend from previous stage
-COPY --from=frontend-builder /app/packages/frontend/@n8n/design-system/dist ./packages/frontend/@n8n/design-system/dist
-COPY --from=frontend-builder /app/packages/frontend/@n8n/chat/dist ./packages/frontend/@n8n/chat/dist
-COPY --from=frontend-builder /app/packages/frontend/editor-ui/dist ./packages/frontend/editor-ui/dist
-
-# Build backend with turbo cache
+# Build everything with turbo cache
 RUN --mount=type=cache,id=turbo-cache,target=/app/.turbo \
-    --mount=type=cache,id=tsc-cache,target=/app/packages/cli/.tsbuildinfo \
     TURBO_CACHE_DIR=/app/.turbo \
-    pnpm build:backend
+    pnpm build
 
-# Compile for production
+# Compile CLI for production
 RUN cd packages/cli && pnpm compile:build
 
 # ==============================================================================
-# STAGE 5: Production Pruner
+# STAGE 4: Production Pruner
 # ==============================================================================
 FROM deps-installer AS prod-pruner
 
 # Copy built application
-COPY --from=backend-builder /app/packages ./packages
-COPY --from=backend-builder /app/patches ./patches
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/patches ./patches
 
 # Prune to production dependencies only
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
@@ -126,7 +93,7 @@ RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     find . -name "*.spec.js" -type f -delete
 
 # ==============================================================================
-# STAGE 6: Task Runner Launcher
+# STAGE 5: Task Runner Launcher
 # ==============================================================================
 FROM alpine:3.20.3 AS launcher-downloader
 ARG TARGETPLATFORM=linux/amd64
@@ -151,7 +118,7 @@ RUN set -e; \
     cd / && rm -rf /launcher-temp
 
 # ==============================================================================
-# STAGE 7: Final Runtime Image
+# STAGE 6: Final Runtime Image
 # ==============================================================================
 FROM node:${NODE_VERSION}-alpine AS runtime
 
