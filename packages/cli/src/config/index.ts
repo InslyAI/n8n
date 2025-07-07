@@ -14,13 +14,13 @@ const globalConfig = Container.get(GlobalConfig);
 
 if (inE2ETests) {
 	globalConfig.diagnostics.enabled = false;
-	globalConfig.publicApi.disabled = true;
+	// globalConfig.publicApi.disabled = true;
 	process.env.EXTERNAL_FRONTEND_HOOKS_URLS = '';
 	process.env.N8N_PERSONALIZATION_ENABLED = 'false';
 	process.env.N8N_AI_ENABLED = 'true';
 } else if (inTest) {
 	globalConfig.logging.level = 'silent';
-	globalConfig.publicApi.disabled = true;
+	// globalConfig.publicApi.disabled = true;
 	process.env.SKIP_STATISTICS_EVENTS = 'true';
 	globalConfig.auth.cookie.secure = false;
 	process.env.N8N_SKIP_AUTH_ON_OAUTH_CALLBACK = 'false';
