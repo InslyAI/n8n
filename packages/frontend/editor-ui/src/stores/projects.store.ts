@@ -60,14 +60,8 @@ export const useProjectsStore = defineStore(STORES.PROJECTS, () => {
 	const teamProjectsLimit = computed(() => settingsStore.settings.enterprise.projects.team.limit);
 	const isTeamProjectFeatureEnabled = computed<boolean>(() => teamProjectsLimit.value !== 0);
 	const hasUnlimitedProjects = computed<boolean>(() => teamProjectsLimit.value === -1);
-	const isTeamProjectLimitExceeded = computed<boolean>(
-		() => projectsCount.value.team >= teamProjectsLimit.value,
-	);
 	const canCreateProjects = computed<boolean>(
-		() =>
-			(hasUnlimitedProjects.value ||
-				(isTeamProjectFeatureEnabled.value && !isTeamProjectLimitExceeded.value)) &&
-			!sourceControlStore.preferences.branchReadOnly,
+		() => isTeamProjectFeatureEnabled.value && !sourceControlStore.preferences.branchReadOnly,
 	);
 	const hasPermissionToCreateProjects = computed(() =>
 		hasPermission(['rbac'], { rbac: { scope: 'project:create' } }),
