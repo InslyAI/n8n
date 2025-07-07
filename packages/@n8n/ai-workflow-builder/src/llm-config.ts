@@ -19,7 +19,7 @@ export const o4mini = async (config: LLMConfig) => {
 export const gpt41mini = async (config: LLMConfig) => {
 	const { ChatOpenAI } = await import('@langchain/openai');
 	return new ChatOpenAI({
-		model: 'gpt-4.1-mini-2025-04-14',
+		model: 'gpt-4.1',
 		apiKey: config.apiKey,
 		temperature: 0,
 		configuration: {
@@ -32,10 +32,10 @@ export const gpt41mini = async (config: LLMConfig) => {
 export const anthropicClaude37Sonnet = async (config: LLMConfig) => {
 	const { ChatAnthropic } = await import('@langchain/anthropic');
 	return new ChatAnthropic({
-		model: 'claude-3-7-sonnet-20250219',
+		model: 'claude-sonnet-4-20250514',
 		apiKey: config.apiKey,
 		temperature: 0,
-		maxTokens: 16000,
+		maxTokens: 32000,
 		anthropicApiUrl: config.baseUrl,
 		clientOptions: {
 			defaultHeaders: config.headers,
