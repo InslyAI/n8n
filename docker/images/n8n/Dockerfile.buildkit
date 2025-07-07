@@ -53,8 +53,9 @@ RUN find packages -type f ! -name "package.json" -delete && \
 
 # Install ALL dependencies with cache mount
 # Set DOCKER_BUILD=1 to skip lefthook installation
+# Install with dev dependencies to ensure build tools are available
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    DOCKER_BUILD=1 pnpm install --frozen-lockfile --prefer-offline
+    DOCKER_BUILD=1 NODE_ENV=development pnpm install --frozen-lockfile --prefer-offline
 
 # ==============================================================================
 # STAGE 3: Builder
@@ -65,9 +66,7 @@ FROM deps-installer AS builder
 COPY . .
 
 # Build everything with turbo cache
-# Set NODE_ENV to development to ensure all dependencies are available
 RUN --mount=type=cache,id=turbo-cache,target=/app/.turbo \
-    NODE_ENV=development \
     TURBO_CACHE_DIR=/app/.turbo \
     pnpm build
 
