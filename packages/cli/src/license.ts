@@ -308,7 +308,7 @@ export class License implements LicenseProvider {
 
 	/** @deprecated Use `LicenseState.isAPIDisabled` instead. */
 	isAPIDisabled() {
-		return this.isLicensed(LICENSE_FEATURES.API_DISABLED);
+		return false;
 	}
 
 	/** @deprecated Use `LicenseState.isWorkerViewLicensed` instead. */
