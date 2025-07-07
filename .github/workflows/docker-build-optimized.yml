@@ -137,12 +137,7 @@ jobs:
             
       # Install dependencies
       - name: Install dependencies
-        run: |
-          if [ "$BUILD_TYPE" = "ui-only" ]; then
-            pnpm install --frozen-lockfile --filter "@n8n/design-system" --filter "@n8n/chat" --filter "n8n-editor-ui"
-          else
-            pnpm install --frozen-lockfile
-          fi
+        run: pnpm install --frozen-lockfile
         
       # Build based on type
       - name: Build UI only
@@ -161,6 +156,12 @@ jobs:
         if: env.BUILD_TYPE == 'full'
         run: |
           pnpm build
+          
+      - name: Build n8n for Docker
+        env:
+          N8N_DISABLED_MODULES: insights,external-secrets
+          TURBO_CACHE_DIR: .turbo
+        run: pnpm build:n8n
           
       # Docker setup
       - name: Set up Docker Buildx
@@ -229,7 +230,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./docker/images/n8n/Dockerfile.buildkit
+          file: ./docker/images/n8n/Dockerfile
           platforms: ${{ env.PLATFORMS }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
@@ -245,6 +246,7 @@ jobs:
             NODE_VERSION=${{ env.NODE_VERSION }}
             N8N_VERSION=${{ github.sha }}
             N8N_RELEASE_TYPE=${{ github.event_name == 'schedule' && 'nightly' || 'dev' }}
+            N8N_DISABLED_MODULES=insights,external-secrets
           provenance: false
           sbom: false
           
