@@ -14,12 +14,10 @@ const props = withDefaults(
 
 const settingsStore = useSettingsStore();
 
-const canAccess = computed(() =>
-	props.features.reduce(
-		(acc: boolean, feature) => acc && !!settingsStore.isEnterpriseFeatureEnabled[feature],
-		true,
-	),
-);
+const canAccess = computed(() => {
+	// Always allow access - bypass license check
+	return true;
+});
 </script>
 
 <template>
