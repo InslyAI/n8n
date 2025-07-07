@@ -65,7 +65,9 @@ FROM deps-installer AS builder
 COPY . .
 
 # Build everything with turbo cache
+# Set NODE_ENV to development to ensure all dependencies are available
 RUN --mount=type=cache,id=turbo-cache,target=/app/.turbo \
+    NODE_ENV=development \
     TURBO_CACHE_DIR=/app/.turbo \
     pnpm build
 
