@@ -57,134 +57,164 @@ export async function sendMessage(
 	);
 }
 
+<<<<<<< HEAD
+=======
+// Create a transform stream that parses newline-delimited JSON
+function createLineParser(): TransformStream<Uint8Array, StructuredChunk> {
+	let buffer = '';
+	const decoder = new TextDecoder();
+
+	return new TransformStream({
+		transform(chunk, controller) {
+			buffer += decoder.decode(chunk, { stream: true });
+
+			// Process all complete lines in the buffer
+			const lines = buffer.split('\n');
+			buffer = lines.pop() ?? ''; // Keep incomplete line in buffer
+
+			for (const line of lines) {
+				if (line.trim()) {
+					try {
+						const parsed = JSON.parse(line) as StructuredChunk;
+						controller.enqueue(parsed);
+					} catch (error) {
+						// Handle non-JSON lines as plain text
+						controller.enqueue({
+							type: 'item',
+							content: line,
+						} as StructuredChunk);
+					}
+				}
+			}
+		},
+
+		flush(controller) {
+			// Process any remaining buffer content
+			if (buffer.trim()) {
+				try {
+					const parsed = JSON.parse(buffer) as StructuredChunk;
+					controller.enqueue(parsed);
+				} catch (error) {
+					controller.enqueue({
+						type: 'item',
+						content: buffer,
+					} as StructuredChunk);
+				}
+			}
+		},
+	});
+}
+
+export interface StreamingEventHandlers {
+	onBeginMessage: (nodeId: string, runIndex?: number) => void;
+	onChunk: (chunk: string, nodeId?: string, runIndex?: number) => void;
+	onEndMessage: (nodeId: string, runIndex?: number) => void;
+}
+
+
 export async function sendMessageStreaming(
 	message: string,
 	files: File[],
 	sessionId: string,
 	options: ChatOptions,
-	onChunk: (chunk: string, nodeId?: string, runIndex?: number) => void,
-	onBeginMessage: (nodeId: string, runIndex?: number) => void,
-	onEndMessage: (nodeId: string, runIndex?: number) => void,
+handlers: StreamingEventHandlers,
 ): Promise<void> {
-	let response: Response;
-
-	if (files.length > 0) {
-		// Handle file uploads with FormData for streaming
-		const formData = new FormData();
-		formData.append('action', 'sendMessage');
-		formData.append(options.chatSessionKey as string, sessionId);
-		formData.append(options.chatInputKey as string, message);
-
-		if (options.metadata) {
-			formData.append('metadata', JSON.stringify(options.metadata));
-		}
-
-		// Add all files
-		for (const file of files) {
-			formData.append('files', file);
-		}
-
-		response = await fetch(options.webhookUrl, {
-			method: 'POST',
-			headers: {
-				Accept: 'text/plain',
-				...options.webhookConfig?.headers,
-			},
-			body: formData,
-		});
-	} else {
-		// Handle text-only messages with JSON
-		const body = {
-			action: 'sendMessage',
-			[options.chatSessionKey as string]: sessionId,
-			[options.chatInputKey as string]: message,
-			...(options.metadata ? { metadata: options.metadata } : {}),
-		};
-
-		response = await fetch(options.webhookUrl, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Accept: 'text/plain',
-				...options.webhookConfig?.headers,
-			},
-			body: JSON.stringify(body),
-		});
-	}
+	// Build request
+	const response = await (files.length > 0
+		? sendWithFiles(message, files, sessionId, options)
+		: sendTextOnly(message, sessionId, options));
 
 	if (!response.ok) {
 		const errorText = await response.text();
-		console.error('HTTP error response:', errorText);
-		throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+		console.error('HTTP error response:', response.status, errorText);
+		throw new Error(`Error while sending message. Error: ${errorText}`);
 	}
 
-	const reader = response.body?.getReader();
-	if (!reader) {
+	if (!response.body) {
 		throw new Error('Response body is not readable');
 	}
 
-	const decoder = new TextDecoder();
-	let buffer = '';
+	// Process the stream
+	const reader = response.body.pipeThrough(createLineParser()).getReader();
 
 	try {
 		while (true) {
 			const { done, value } = await reader.read();
-			if (done) {
-				break;
-			}
+if (done) break;
 
-			const chunk = decoder.decode(value, { stream: true });
-			buffer += chunk;
+			const nodeId = value.metadata?.nodeId || 'unknown';
+			const runIndex = value.metadata?.runIndex;
 
-			// Process all complete lines in the buffer
-			let newlineIndex;
-			while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-				const line = buffer.substring(0, newlineIndex);
-				buffer = buffer.substring(newlineIndex + 1);
-
-				if (line.trim()) {
-					try {
-						const decoded: StructuredChunk = JSON.parse(line);
-						const nodeId = decoded.metadata?.nodeId || 'unknown';
-						const runIndex = decoded.metadata?.runIndex;
-
-						if (decoded?.type === 'begin') {
-							onBeginMessage(nodeId, runIndex);
-						}
-						if (decoded?.type === 'item') {
-							onChunk(decoded?.content ?? '', nodeId, runIndex);
-						}
-						if (decoded?.type === 'end') {
-							onEndMessage(nodeId, runIndex);
-						}
-						if (decoded?.type === 'error') {
-							onChunk(`Error: ${decoded.content ?? 'Unknown error'}`, nodeId, runIndex);
-							onEndMessage(nodeId, runIndex);
-						}
-					} catch (error) {
-						console.warn('Failed to parse JSON line:', line, error);
-						// Fallback: treat as plain text chunk without nodeId
-						onChunk(line, undefined);
-					}
-				}
-			}
-		}
-
-		// Process any remaining buffer content
-		if (buffer.trim()) {
-			try {
-				const decoded: StructuredChunk = JSON.parse(buffer);
-				const nodeId = decoded.metadata?.nodeId || 'unknown';
-				const runIndex = decoded.metadata?.runIndex;
-				if (decoded?.type === 'item') {
-					onChunk(decoded?.content ?? '', nodeId, runIndex);
-				}
-			} catch (error) {
-				console.warn('Failed to parse remaining buffer as JSON, treating as plain text:', buffer);
-				onChunk(buffer, undefined);
+			switch (value.type) {
+				case 'begin':
+					handlers.onBeginMessage(nodeId, runIndex);
+					break;
+				case 'item':
+					handlers.onChunk(value.content ?? '', nodeId, runIndex);
+					break;
+				case 'end':
+					handlers.onEndMessage(nodeId, runIndex);
+					break;
+				case 'error':
+					handlers.onChunk(`Error: ${value.content ?? 'Unknown error'}`, nodeId, runIndex);
+					handlers.onEndMessage(nodeId, runIndex);
+					break;
 			}
 		}
 	} finally {
 		reader.releaseLock();
 	}
+}
+<<<<<<< HEAD
+async function sendWithFiles(
+	message: string,
+	files: File[],
+	sessionId: string,
+	options: ChatOptions,
+): Promise<Response> {
+	const formData = new FormData();
+	formData.append('action', 'sendMessage');
+	formData.append(options.chatSessionKey as string, sessionId);
+	formData.append(options.chatInputKey as string, message);
+
+	if (options.metadata) {
+		formData.append('metadata', JSON.stringify(options.metadata));
+	}
+
+	for (const file of files) {
+		formData.append('files', file);
+	}
+
+	return await fetch(options.webhookUrl, {
+		method: 'POST',
+		headers: {
+			Accept: 'text/plain',
+			...options.webhookConfig?.headers,
+		},
+		body: formData,
+	});
+}
+
+// Helper function for text-only messages
+async function sendTextOnly(
+	message: string,
+	sessionId: string,
+	options: ChatOptions,
+): Promise<Response> {
+	const body = {
+		action: 'sendMessage',
+		[options.chatSessionKey as string]: sessionId,
+		[options.chatInputKey as string]: message,
+		...(options.metadata ? { metadata: options.metadata } : {}),
+	};
+
+	return await fetch(options.webhookUrl, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			Accept: 'text/plain',
+			...options.webhookConfig?.headers,
+		},
+		body: JSON.stringify(body),
+	});
 }

@@ -127,6 +127,7 @@ export function createPage({
 							${en ? `en: ${JSON.stringify(en)},` : ''}
 						},
 						${initialMessages.length ? `initialMessages: ${JSON.stringify(initialMessages)},` : ''}
+						enableStreaming: ${!!enableStreaming},
 					});
 				})();
 			</script>
